@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    environment:
+      POSTGRES_CONNECTION_STRING: "host=db dbname=notesapp user=postgres password=mysecretpassword sslmode=disable"
+  
+  db:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: notesapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
