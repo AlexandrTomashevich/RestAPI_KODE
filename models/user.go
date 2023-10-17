@@ -1,11 +1,11 @@
 package models
 
 import (
+	"RestAPI_KODE/database"
 	"RestAPI_KODE/lib"
 	"RestAPI_KODE/utils"
-	"database/sql"
 	"errors"
-	"fmt"
+	"log"
 )
 
 type User struct {
@@ -15,40 +15,58 @@ type User struct {
 	Role         string `json:"role"`
 }
 
-func ValidateUser(db *sql.DB, username, password string) (User, bool) {
-	user := User{}
-	err := db.QueryRow("SELECT id, username, password_hash, role FROM users WHERE username=$1", username).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role)
+func UserExists(userID int) (bool, error) {
+	if database.DB == nil {
+		return false, errors.New("database connection not initialized")
+	}
+
+	var exists bool
+	err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", userID).Scan(&exists)
 	if err != nil {
-		lib.Errorf("Failed to validate user: %v", err)
-		return User{}, false
+		return false, err
+	}
+	return exists, nil
+}
+
+func ValidateUser(username, password string) (*User, bool) {
+	user := &User{}
+	err := database.DB.QueryRow("SELECT id, username, password_hash, role FROM users WHERE username=$1",
+		username).Scan(&user.ID, &user.Username, &user.PasswordHash, &user.Role)
+
+	if err != nil {
+		log.Printf("Failed to validate user: %v", err)
+		return nil, false
 	}
 	if utils.CheckPassword(user.PasswordHash, password) {
 		return user, true
 	}
-	return User{}, false
+	return nil, false
 }
 
-func AuthUser(db *sql.DB, username, password string) (*User, error) {
-	fmt.Println("Entered AuthUser")
-	user, valid := ValidateUser(db, username, password)
-	if valid {
-		return &user, nil
+func AuthUser(username, password string) (*User, error) {
+	lib.Logger.Printf("Entered AuthUser")
+	user, valid := ValidateUser(username, password)
+	switch {
+	case user == nil:
+		return nil, errors.New("user not found or invalid user received from ValidateUser")
+	case !valid:
+		return nil, errors.New("invalid password")
 	}
-	fmt.Println("Exiting AuthUser")
-	return &User{}, errors.New("invalid credentials")
+	return user, nil
 }
 
-func CreateUser(db *sql.DB, username, password, role string) (int, error) {
+func CreateUser(username, password, role string) (int, error) {
 	hashedPassword, err := utils.HashPassword(password)
 	if err != nil {
 		lib.Errorf("Failed to hash password: %v", err)
 		return 0, err
 	}
 	var userID int
-	err = db.QueryRow("INSERT INTO users(username, password_hash, role) VALUES($1, $2, $3) RETURNING id", username, hashedPassword, role).Scan(&userID)
+	err = database.DB.QueryRow("INSERT INTO users(username, password_hash, role) VALUES($1, $2, $3) RETURNING id",
+		username, hashedPassword, role).Scan(&userID)
 	if err != nil {
-		lib.Errorf("Failed to create user: %v", err)
 		return 0, err
 	}
 	return userID, nil
+
 }

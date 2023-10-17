@@ -5,61 +5,78 @@ import (
 	"RestAPI_KODE/config"
 	"RestAPI_KODE/database"
 	"RestAPI_KODE/lib"
-	"RestAPI_KODE/middleware"
-	"RestAPI_KODE/models"
-	"database/sql"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: nil,
+	}
 	log.Println("Started app")
-	var err error
-	var db *sql.DB
 
-	// Загрузка конфигурации
 	cfg, err := config.LoadConfig("config.yaml")
 	if err != nil {
 		lib.Fatalf("Failed to load config: %s", err)
 	}
 
-	// Инициализация подключения к базе данных с использованием строки подключения из конфигурационного файла
-	db, err = database.InitializeDB(cfg.Database.ConnectionString)
+	database.DB, err = database.NewConnection(cfg.Database)
 	if err != nil {
 		lib.Fatalf("Failed to initialized db: %s", err)
 	}
 
-	models.SetUserDB(db)
-	//api.SetDatabase(db)
+	if database.DB == nil {
+		log.Fatal("Database not initialized!")
+	}
 
-	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			api.AuthUser(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	lib.Infof("Migrations ok")
+	http.HandleFunc("/auth", authenticateHandler)
+	http.HandleFunc("/users", usersHandler)
+	http.HandleFunc("/notes", notesHandler)
+
+	server = &http.Server{Addr: ":8080", Handler: nil}
+
+	go func() {
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			lib.Fatalf("Error starting the server: %s", err)
 		}
-	})
+	}()
 
-	http.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			api.CreateUser(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	<-signals
 
-	http.HandleFunc("/notes", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			middleware.AuthorizationMiddleware(http.HandlerFunc(api.AddNote)).ServeHTTP(w, r)
-		} else if r.Method == "GET" {
-			middleware.AuthorizationMiddleware(http.HandlerFunc(api.GetNotes)).ServeHTTP(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	if err := server.Shutdown(nil); err != nil {
+		lib.Fatalf("Error shutting down the server: %s", err)
+	}
+}
 
-	err = http.ListenAndServe(":8080", nil)
-	if err != nil {
-		lib.Errorf("Error starting the server: %s", err)
+func authenticateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		api.AuthUser(w, r)
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func usersHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		api.CreateUser(w, r)
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func notesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		api.AddNote(w, r)
+	} else if r.Method == "GET" {
+		api.GetNotes(w, r)
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }

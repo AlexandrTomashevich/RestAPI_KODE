@@ -1,34 +1,22 @@
 package models
 
 import (
-	"database/sql"
-	"errors"
+	"RestAPI_KODE/database"
 	"time"
 )
 
 type Note struct {
 	ID        int       `json:"id"`
-	UserID    int       `json:"userId"`
+	UserId    int       `json:"userId"`
 	Content   string    `json:"content"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
-var db *sql.DB
-
-func SetUserDB(database *sql.DB) {
-	db = database
-}
-
-func GetNoteByID(noteID int) (*Note, error) {
-	if db == nil {
-		return nil, errors.New("Database connection not initialized")
-	}
-
-	var note Note
-	query := "SELECT id, userId, content, timestamp FROM notes WHERE id = $1"
-	err := db.QueryRow(query, noteID).Scan(&note.ID, &note.UserID, &note.Content, &note.Timestamp)
+func CreateNote(userID int, content string) (int, error) {
+	var noteID int
+	err := database.DB.QueryRow(`INSERT INTO notes (userId, content) VALUES ($1, $2) RETURNING id`, userID, content).Scan(&noteID)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return &note, nil
+	return noteID, nil
 }
