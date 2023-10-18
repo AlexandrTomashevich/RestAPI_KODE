@@ -3,7 +3,6 @@ package database
 import (
 	"RestAPI_KODE/config"
 	"database/sql"
-	"fmt"
 	_ "github.com/lib/pq"
 )
 
@@ -24,7 +23,6 @@ func NewConnection(dbConfig config.Database) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(dbConfig.ConnectionString())
 
 	return DB, nil
 }
